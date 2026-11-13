@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-INBEEBOX Auto-Installer — Intelligent Package & Archive Manager with Native GUI
-Instala, extrae e inspecciona paquetes .deb, archivos .zip y herramientas de IA con resúmenes automáticos.
+Auto-Installer — Intelligent Package & Archive Manager with Native GUI
+Instala, extrae e inspecciona paquetes .deb, archivos .zip y herramientas de software con resúmenes automáticos.
 
 Hecho por iArtLabs & el agente Antigravity (Google DeepMind)
 Licencia: MIT
@@ -30,9 +30,9 @@ SUDO_ASKPASS = next((p for p in SUDO_ASKPASS_LOCATIONS if Path(p).exists()), "")
 # Iconos del sistema
 ICON_CANDIDATES = [
     Path(__file__).resolve().parent.parent / "assets" / "icon.png",
-    Path.home() / ".local/share/icons/inbeebox.png",
-    Path("/usr/share/icons/hicolor/256x256/apps/inbeebox.png"),
-    Path("/usr/share/icons/inbeebox.png")
+    Path.home() / ".local/share/icons/auto-installer.png",
+    Path("/usr/share/icons/hicolor/256x256/apps/auto-installer.png"),
+    Path("/usr/share/icons/auto-installer.png")
 ]
 APP_ICON_PATH = next((str(p) for p in ICON_CANDIDATES if p.exists()), "")
 
@@ -211,9 +211,9 @@ def launch_gui(initial_file: Path | None = None):
     gi.require_version("Gdk", "3.0")
     from gi.repository import Gtk, Gdk, GLib, Pango
 
-    class InbeeboxInstallerApp(Gtk.Window):
+    class AutoInstallerApp(Gtk.Window):
         def __init__(self, target_file: Path | None = None):
-            super().__init__(title="INBEEBOX Auto-Installer")
+            super().__init__(title="Auto-Installer")
             self.set_default_size(920, 640)
             self.set_position(Gtk.WindowPosition.CENTER)
 
@@ -239,8 +239,8 @@ def launch_gui(initial_file: Path | None = None):
             # HeaderBar
             header = Gtk.HeaderBar()
             header.set_show_close_button(True)
-            header.set_title("INBEEBOX Auto-Installer")
-            header.set_subtitle("Gestor inteligente de paquetes y herramientas de IA")
+            header.set_title("Auto-Installer")
+            header.set_subtitle("Gestor inteligente de paquetes y software")
             self.set_titlebar(header)
 
             btn_browse = Gtk.Button(label="Examinar archivo...")
@@ -672,7 +672,7 @@ def launch_gui(initial_file: Path | None = None):
                 dialog.run()
                 dialog.destroy()
 
-    app = InbeeboxInstallerApp(initial_file)
+    app = AutoInstallerApp(initial_file)
     app.connect("destroy", Gtk.main_quit)
     Gtk.main()
 
@@ -682,7 +682,7 @@ def launch_gui(initial_file: Path | None = None):
 
 def run_cli_mode(files: list[Path]):
     print("=" * 65)
-    print("  INBEEBOX AUTO-INSTALLER (Modo Terminal)")
+    print("  AUTO-INSTALLER (Modo Terminal)")
     print("  Hecho por iArtLabs & Antigravity (Google DeepMind)")
     print("=" * 65)
     for f in files:

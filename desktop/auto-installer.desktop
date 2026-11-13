@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Auto-Installer
+GenericName=Gestor de Paquetes y Herramientas
+Comment=Instala y extrae paquetes .deb, archivos .zip y herramientas con resúmenes automáticos
+Exec=auto-installer %F
+Icon=auto-installer
+Terminal=false
+Type=Application
+Categories=System;Utility;PackageManager;
+MimeType=application/vnd.debian.binary-package;application/zip;application/x-tar;application/x-compressed-tar;
+Keywords=package;deb;installer;zip;extract;ai;ollama;
+StartupNotify=true

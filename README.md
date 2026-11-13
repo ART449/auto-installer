@@ -1,11 +1,11 @@
-# 🐝 INBEEBOX Auto-Installer
+# 🐝 Auto-Installer
 
 <p align="center">
-  <img src="assets/icon.png" width="128" height="128" alt="INBEEBOX Icon" />
+  <img src="assets/icon.png" width="128" height="128" alt="Auto-Installer Icon" />
 </p>
 
 <p align="center">
-  <b>Gestor Inteligente de Paquetes Debian (.deb), Archivos ZIP y Herramientas de IA</b><br />
+  <b>Gestor Inteligente de Paquetes Debian (.deb), Archivos ZIP y Software con GUI Nativa</b><br />
   <i>Construido por <b>iArtLabs</b> & el agente autónomo <b>Antigravity</b> (Google DeepMind)</i>
 </p>
 
@@ -15,7 +15,7 @@
 
 - **Resumen Ejecutivo Automático:** Lee e interpreta los metadatos de los paquetes antes de instalarlos, explicando qué hace cada programa, su versión, desarrollador, dependencias y tamaño en disco.
 - **Descompresión Inteligente:** Desempaqueta archivos `.zip` en subdirectorios limpios, detecta scripts de instalación (`install.sh`, `setup.sh`), otorga permisos de ejecución e identifica instaladores anidados.
-- **Interfaz Gráfica Nativa (GTK3):** Diseñada para integrarse visualmente en entornos GNOME/Wayland y X11 con soporte para modo oscuro.
+- **Interfaz Gráfica Nativa (GTK3):** Diseñada para integrarse visualmente en entornos GNOME/Wayland y X11 con soporte para tema oscuro.
 - **Integración con el Administrador de Archivos:**
   - Doble clic directo en paquetes `.deb`.
   - Menú contextual en Nautilus: Clic derecho -> *Scripts* -> *⚡ Instalar o Desempaquetar*.
@@ -27,7 +27,7 @@
 ## 📸 Vista Previa
 
 <p align="center">
-  <img src="assets/screenshot.png" width="800" alt="Captura de Pantalla INBEEBOX" />
+  <img src="assets/screenshot.png" width="800" alt="Captura de Pantalla Auto-Installer" />
 </p>
 
 ---
@@ -37,16 +37,16 @@
 Para instalar en tu sistema local:
 
 ```bash
-git clone https://github.com/ART449/inbeebox-auto-installer.git
-cd inbeebox-auto-installer
+git clone https://github.com/ART449/auto-installer.git
+cd auto-installer
 ./install.sh
 ```
 
 El script configurará:
-1. El ejecutable en `~/.local/bin/inbeebox-installer` y el alias `auto-installer`.
+1. El ejecutable en `~/.local/bin/auto-installer`.
 2. Los iconos en `~/.local/share/icons/`.
 3. El lanzador de escritorio en `~/.local/share/applications/`.
-4. El script de contexto para Nautilus en `~/.local/share/nautilus/scripts/`.
+4. La acción contextual para Nautilus en `~/.local/share/nautilus/scripts/`.
 
 ---
 
