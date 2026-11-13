@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Filtros de sombra -->
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="wingGlow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#74b9ff" flood-opacity="0.5"/>
+    </filter>
+
+    <!-- Gradientes de la Caja -->
+    <linearGradient id="boxInside" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2c1a0e"/>
+      <stop offset="100%" stop-color="#140b05"/>
+    </linearGradient>
+    <linearGradient id="boxLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c98336"/>
+      <stop offset="100%" stop-color="#9e5d1b"/>
+    </linearGradient>
+    <linearGradient id="boxRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e59d4c"/>
+      <stop offset="100%" stop-color="#bd7426"/>
+    </linearGradient>
+    <linearGradient id="flapLeft" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#d68f42"/>
+      <stop offset="100%" stop-color="#b06b20"/>
+    </linearGradient>
+    <linearGradient id="flapRight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f0ab5d"/>
+      <stop offset="100%" stop-color="#c97e2e"/>
+    </linearGradient>
+
+    <!-- Gradientes de la Abejita -->
+    <radialGradient id="beeBody" cx="40%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#fff176"/>
+      <stop offset="50%" stop-color="#fbc02d"/>
+      <stop offset="100%" stop-color="#f57f17"/>
+    </radialGradient>
+    <linearGradient id="beeStripe" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2c3437"/>
+      <stop offset="50%" stop-color="#1e2426"/>
+      <stop offset="100%" stop-color="#2c3437"/>
+    </linearGradient>
+    <linearGradient id="wingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#e0f7fa" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#80deea" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="honeyDrip" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffb300"/>
+      <stop offset="100%" stop-color="#ff8f00"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Sombra en el suelo -->
+  <ellipse cx="256" cy="468" rx="140" ry="24" fill="#000000" opacity="0.25"/>
+
+  <!-- ==================== PARTE TRASERA DE LA CAJA ==================== -->
+  <g filter="url(#shadow)">
+    <!-- Hueco interior oscuro de la caja -->
+    <polygon points="150,340 256,385 362,340 256,300" fill="url(#boxInside)"/>
+
+    <!-- Solapa trasera izquierda abierta -->
+    <polygon points="150,340 256,300 230,260 125,295" fill="#a4611d"/>
+    <!-- Solapa trasera derecha abierta -->
+    <polygon points="362,340 256,300 282,260 387,295" fill="#8c5014"/>
+  </g>
+
+  <!-- ==================== ESTELAS DE VUELO / CHISPAS ==================== -->
+  <!-- Destellos mágicos emergiendo -->
+  <g opacity="0.85">
+    <path d="M 230,340 Q 220,290 238,260" stroke="#ffd54f" stroke-width="4" stroke-dasharray="6,6" fill="none" stroke-linecap="round"/>
+    <path d="M 282,340 Q 295,295 276,255" stroke="#ffd54f" stroke-width="4" stroke-dasharray="6,6" fill="none" stroke-linecap="round"/>
+    <!-- Estrellas / chispas -->
+    <polygon points="155,230 160,240 170,245 160,250 155,260 150,250 140,245 150,240" fill="#fff59d"/>
+    <polygon points="355,210 358,218 366,222 358,226 355,234 352,226 344,222 352,218" fill="#fff59d"/>
+    <circle cx="205" cy="210" r="4" fill="#ffffff" opacity="0.9"/>
+    <circle cx="310" cy="190" r="5" fill="#ffffff" opacity="0.9"/>
+  </g>
+
+  <!-- ==================== LA ABEJITA (INBEE) ==================== -->
+  <g transform="translate(0, -10)">
+    <!-- ALA IZQUIERDA (trasera) -->
+    <g filter="url(#wingGlow)">
+      <ellipse cx="195" cy="155" rx="55" ry="32" transform="rotate(-35, 195, 155)" fill="url(#wingGrad)" stroke="#b2ebf2" stroke-width="2"/>
+      <!-- Nervaduras del ala -->
+      <path d="M 225,170 Q 185,150 160,145" stroke="#ffffff" stroke-width="2" fill="none" opacity="0.7"/>
+      <path d="M 205,160 Q 190,135 180,130" stroke="#ffffff" stroke-width="1.5" fill="none" opacity="0.7"/>
+    </g>
+
+    <!-- ALA DERECHA (trasera) -->
+    <g filter="url(#wingGlow)">
+      <ellipse cx="317" cy="155" rx="55" ry="32" transform="rotate(35, 317, 155)" fill="url(#wingGrad)" stroke="#b2ebf2" stroke-width="2"/>
+      <!-- Nervaduras del ala -->
+      <path d="M 287,170 Q 327,150 352,145" stroke="#ffffff" stroke-width="2" fill="none" opacity="0.7"/>
+      <path d="M 307,160 Q 322,135 332,130" stroke="#ffffff" stroke-width="1.5" fill="none" opacity="0.7"/>
+    </g>
+
+    <!-- AGUIJÓN PEQUEÑO Y TIERNO -->
+    <polygon points="256,268 250,250 262,250" fill="#2c3437"/>
+
+    <!-- CUERPO DE LA ABEJA (Gordito y tierno) -->
+    <ellipse cx="256" cy="205" rx="58" ry="68" fill="url(#beeBody)" filter="url(#shadow)"/>
+
+    <!-- RAYAS NEGRAS / CARBÓN (Curvadas para dar volumen 3D) -->
+    <!-- Raya 1 (Superior) -->
+    <path d="M 202,185 Q 256,202 310,185 Q 312,198 308,206 Q 256,224 204,206 Q 200,196 202,185 Z" fill="url(#beeStripe)"/>
+    <!-- Raya 2 (Media) -->
+    <path d="M 208,222 Q 256,240 304,222 Q 300,236 292,246 Q 256,262 220,246 Q 212,235 208,222 Z" fill="url(#beeStripe)"/>
+
+    <!-- ANTENAS -->
+    <!-- Antena Izquierda -->
+    <path d="M 235,145 Q 215,115 198,118" stroke="#2c3437" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <circle cx="196" cy="118" r="7" fill="#f57f17"/>
+    <!-- Antena Derecha -->
+    <path d="M 277,145 Q 297,115 314,118" stroke="#2c3437" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <circle cx="316" cy="118" r="7" fill="#f57f17"/>
+
+    <!-- OJITOS TIERNOS (Estilo anime/kawaii) -->
+    <!-- Ojo Izquierdo -->
+    <ellipse cx="234" cy="172" rx="10" ry="14" fill="#1e2426"/>
+    <ellipse cx="231" cy="167" rx="4" ry="6" fill="#ffffff"/>
+    <circle cx="236" cy="177" r="2.5" fill="#ffffff"/>
+    <!-- Ojo Derecho -->
+    <ellipse cx="278" cy="172" rx="10" ry="14" fill="#1e2426"/>
+    <ellipse cx="275" cy="167" rx="4" ry="6" fill="#ffffff"/>
+    <circle cx="280" cy="177" r="2.5" fill="#ffffff"/>
+
+    <!-- MEJILLAS ROSADAS (Blush) -->
+    <ellipse cx="218" cy="182" rx="9" ry="5" fill="#ff7675" opacity="0.6"/>
+    <ellipse cx="294" cy="182" rx="9" ry="5" fill="#ff7675" opacity="0.6"/>
+
+    <!-- SONRISA FELIZ -->
+    <path d="M 248,185 Q 256,194 264,185" stroke="#2c3437" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+
+    <!-- PATITAS DELANTERAS ABRAZANDO EL AIRE -->
+    <ellipse cx="225" cy="225" rx="8" ry="13" transform="rotate(-20, 225, 225)" fill="#2c3437"/>
+    <ellipse cx="287" cy="225" rx="8" ry="13" transform="rotate(20, 287, 225)" fill="#2c3437"/>
+  </g>
+
+  <!-- ==================== PARTE DELANTERA DE LA CAJA ==================== -->
+  <g filter="url(#shadow)">
+    <!-- Cara Izquierda de la Caja -->
+    <polygon points="150,340 256,385 256,460 150,410" fill="url(#boxLeft)"/>
+
+    <!-- Cara Derecha de la Caja -->
+    <polygon points="256,385 362,340 362,410 256,460" fill="url(#boxRight)"/>
+
+    <!-- Solapa Frontal Izquierda Abierta hacia afuera -->
+    <polygon points="150,340 256,385 235,425 125,370" fill="url(#flapLeft)"/>
+
+    <!-- Solapa Frontal Derecha Abierta hacia afuera -->
+    <polygon points="256,385 362,340 387,370 277,425" fill="url(#flapRight)"/>
+
+    <!-- Cinta de embalaje o detalle hexagonal en la caja -->
+    <!-- Emblema de Panal Hexagonal en el frente de la caja -->
+    <g transform="translate(256, 422) scale(0.85)">
+      <!-- Hexágono central -->
+      <polygon points="0,-16 14,-8 14,8 0,16 -14,8 -14,-8" fill="#ffd54f" stroke="#b06b20" stroke-width="2"/>
+      <!-- Pequeño símbolo de abeja estilizada o check dentro del hexágono -->
+      <path d="M -6,0 L -2,5 L 7,-5" stroke="#8d490c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+
+    <!-- Gotita de miel escurriendo en el borde de la caja -->
+    <path d="M 205,364 C 205,378 200,388 205,392 C 208,394 212,394 213,391 C 215,386 213,375 214,368 Z" fill="url(#honeyDrip)"/>
+  </g>
+</svg>

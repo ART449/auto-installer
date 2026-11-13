@@ -1,0 +1,764 @@
+#!/usr/bin/env python3
+"""
+INBEEBOX Auto-Installer — Intelligent Package & Archive Manager with Native GUI
+Instala, extrae e inspecciona paquetes .deb, archivos .zip y herramientas de IA con resúmenes automáticos.
+
+Hecho por iArtLabs & el agente Antigravity (Google DeepMind)
+Licencia: MIT
+"""
+
+import os
+import sys
+import json
+import shutil
+import zipfile
+import tarfile
+import threading
+import subprocess
+from pathlib import Path
+
+# Detección de binario de elevación
+SUDO_BIN = shutil.which("sudo") or "/usr/bin/sudo"
+PKEXEC_BIN = shutil.which("pkexec")
+SUDO_ASKPASS_LOCATIONS = [
+    "/usr/local/bin/sudo-askpass",
+    str(Path.home() / ".local/bin/sudo-askpass"),
+    "/usr/lib/ssh/x11-ssh-askpass"
+]
+SUDO_ASKPASS = next((p for p in SUDO_ASKPASS_LOCATIONS if Path(p).exists()), "")
+
+# Iconos del sistema
+ICON_CANDIDATES = [
+    Path(__file__).resolve().parent.parent / "assets" / "icon.png",
+    Path.home() / ".local/share/icons/inbeebox.png",
+    Path("/usr/share/icons/hicolor/256x256/apps/inbeebox.png"),
+    Path("/usr/share/icons/inbeebox.png")
+]
+APP_ICON_PATH = next((str(p) for p in ICON_CANDIDATES if p.exists()), "")
+
+# ============================================================================
+# EXTRACCIÓN DE METADATA Y RESÚMENES
+# ============================================================================
+
+def parse_deb_metadata(deb_path: Path) -> dict:
+    res = {
+        "path": deb_path,
+        "name": deb_path.stem,
+        "version": "1.0",
+        "arch": "amd64",
+        "type": "Paquete Debian (.deb)",
+        "maintainer": "No especificado",
+        "homepage": "",
+        "download_size": f"{deb_path.stat().st_size / (1024*1024):.1f} MB",
+        "installed_size": "Desconocido",
+        "short_desc": "Paquete de software para Debian / Ubuntu / Kali Linux",
+        "long_desc": "",
+        "depends": "Ninguna declarada",
+        "action_label": "⚡ Instalar Paquete (apt)"
+    }
+    try:
+        out = subprocess.check_output(["dpkg-deb", "-f", str(deb_path)], text=True, stderr=subprocess.DEVNULL)
+        data = {}
+        curr_key = None
+        for line in out.splitlines():
+            if line.startswith((" ", "\t")) and curr_key:
+                data[curr_key] += "\n" + line.strip()
+            elif ":" in line:
+                k, v = line.split(":", 1)
+                data[k.strip()] = v.strip()
+                curr_key = k.strip()
+
+        res["name"] = data.get("Package", deb_path.stem)
+        res["version"] = data.get("Version", "1.0")
+        res["arch"] = data.get("Architecture", "amd64")
+        res["maintainer"] = data.get("Maintainer", "No especificado")
+        res["homepage"] = data.get("Homepage", "")
+        if "Installed-Size" in data:
+            try:
+                res["installed_size"] = f"{int(data['Installed-Size']) / 1024:.1f} MB"
+            except Exception:
+                pass
+        
+        desc = data.get("Description", "").strip()
+        lines = desc.splitlines()
+        if lines:
+            res["short_desc"] = lines[0].strip()
+            if len(lines) > 1:
+                res["long_desc"] = "\n".join(l.strip() for l in lines[1:] if l.strip())
+            else:
+                res["long_desc"] = res["short_desc"]
+        res["depends"] = data.get("Depends", "Ninguna declarada")
+    except Exception as e:
+        res["short_desc"] = f"No se pudo leer la metadata ({e})"
+
+    return res
+
+def parse_zip_metadata(zip_path: Path) -> dict:
+    res = {
+        "path": zip_path,
+        "name": zip_path.stem,
+        "version": "1.0",
+        "arch": "Multiplataforma",
+        "type": "Archivo Comprimido ZIP (.zip)",
+        "maintainer": "No especificado",
+        "homepage": "",
+        "download_size": f"{zip_path.stat().st_size / (1024*1024):.1f} MB",
+        "installed_size": "Se extrae en carpeta local",
+        "short_desc": "",
+        "long_desc": "",
+        "depends": "Descompresión nativa",
+        "files_count": 0,
+        "scripts": [],
+        "has_deb": False,
+        "action_label": "📦 Desempaquetar y Configurar"
+    }
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            infolist = zf.infolist()
+            res["files_count"] = len(infolist)
+            names = [i.filename for i in infolist]
+
+            for n in names:
+                if n.endswith("plugin.json"):
+                    try:
+                        pj = json.loads(zf.read(n).decode("utf-8"))
+                        res["name"] = pj.get("name", res["name"])
+                        res["version"] = pj.get("version", "1.0")
+                        res["short_desc"] = pj.get("description", "")
+                        res["type"] = "Plugin / Extensión de IA"
+                    except Exception:
+                        pass
+                    break
+
+            if not res["short_desc"]:
+                for n in names:
+                    if Path(n).name.lower() in ("readme.md", "readme.txt", "readme", "plan.md", "leame.md"):
+                        try:
+                            text = zf.read(n).decode("utf-8", errors="ignore")
+                            clean_lines = [l.strip("#* \t") for l in text.splitlines() if l.strip() and not l.startswith("![")]
+                            if clean_lines:
+                                res["short_desc"] = clean_lines[0]
+                                res["long_desc"] = "\n".join(clean_lines[1:7])
+                            break
+                        except Exception:
+                            pass
+
+            res["scripts"] = [Path(n).name for n in names if n.endswith((".sh", ".py")) and not n.startswith("__")][:5]
+            if any(n.endswith(".deb") for n in names):
+                res["has_deb"] = True
+                res["short_desc"] += " [Contiene instalador .deb en su interior]"
+    except Exception as e:
+        res["short_desc"] = f"Error al inspeccionar ZIP: {e}"
+
+    if not res["short_desc"]:
+        res["short_desc"] = f"Archivo comprimido con {res['files_count']} elementos."
+    if not res["long_desc"]:
+        res["long_desc"] = f"Contiene {res['files_count']} ficheros. Scripts detectados: {', '.join(res['scripts']) if res['scripts'] else 'Ninguno'}"
+
+    return res
+
+def parse_tar_metadata(tar_path: Path) -> dict:
+    is_ollama = "ollama" in tar_path.name.lower()
+    return {
+        "path": tar_path,
+        "name": "Ollama" if is_ollama else tar_path.stem,
+        "version": "Oficial" if is_ollama else "1.0",
+        "arch": "amd64",
+        "type": "Tarball de Software (" + ("Ollama" if is_ollama else tar_path.suffix) + ")",
+        "maintainer": "Ollama Inc." if is_ollama else "No especificado",
+        "homepage": "https://ollama.com" if is_ollama else "",
+        "download_size": f"{tar_path.stat().st_size / (1024*1024):.1f} MB",
+        "installed_size": "Instala en /usr/local",
+        "short_desc": "Servidor y CLI local para modelos de lenguaje (LLM)" if is_ollama else f"Archivo tarball: {tar_path.name}",
+        "long_desc": "Ejecuta modelos como Llama, DeepSeek, Qwen y Mistral localmente sin depender de la nube." if is_ollama else "Empaquetado en formato tar.",
+        "depends": "systemd, libc",
+        "action_label": "⚡ Desplegar Ollama" if is_ollama else "📦 Extraer Tarball"
+    }
+
+def parse_metadata(file_path: Path) -> dict:
+    suffix = file_path.suffix.lower()
+    name = file_path.name.lower()
+    if suffix == ".deb":
+        return parse_deb_metadata(file_path)
+    elif suffix == ".zip":
+        return parse_zip_metadata(file_path)
+    elif name.endswith((".tar.gz", ".tgz", ".tar.zst", ".tar.xz", ".tar")):
+        return parse_tar_metadata(file_path)
+    else:
+        return {
+            "path": file_path,
+            "name": file_path.name,
+            "version": "",
+            "arch": "",
+            "type": "Archivo genérico",
+            "maintainer": "",
+            "homepage": "",
+            "download_size": f"{file_path.stat().st_size / 1024:.1f} KB",
+            "installed_size": "",
+            "short_desc": f"Archivo de tipo {file_path.suffix}",
+            "long_desc": "",
+            "depends": "",
+            "action_label": "Abrir archivo"
+        }
+
+# ============================================================================
+# INTERFAZ GRÁFICA NATIVA (GTK3 / GNOME / WAYLAND / X11)
+# ============================================================================
+
+def launch_gui(initial_file: Path | None = None):
+    import gi
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gtk, Gdk, GLib, Pango
+
+    class InbeeboxInstallerApp(Gtk.Window):
+        def __init__(self, target_file: Path | None = None):
+            super().__init__(title="INBEEBOX Auto-Installer")
+            self.set_default_size(920, 640)
+            self.set_position(Gtk.WindowPosition.CENTER)
+
+            if APP_ICON_PATH and Path(APP_ICON_PATH).exists():
+                try:
+                    self.set_icon_from_file(APP_ICON_PATH)
+                except Exception:
+                    self.set_icon_name("system-software-install")
+            else:
+                self.set_icon_name("system-software-install")
+
+            self.current_meta = None
+            self.downloads_dir = Path.home() / "Descargas"
+            if not self.downloads_dir.exists():
+                self.downloads_dir = Path.home() / "Downloads"
+
+            self.items_list = []
+            self.apply_css()
+
+            main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+            self.add(main_box)
+
+            # HeaderBar
+            header = Gtk.HeaderBar()
+            header.set_show_close_button(True)
+            header.set_title("INBEEBOX Auto-Installer")
+            header.set_subtitle("Gestor inteligente de paquetes y herramientas de IA")
+            self.set_titlebar(header)
+
+            btn_browse = Gtk.Button(label="Examinar archivo...")
+            btn_browse.connect("clicked", self.on_browse_clicked)
+            header.pack_start(btn_browse)
+
+            btn_refresh = Gtk.Button()
+            btn_refresh.set_image(Gtk.Image.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON))
+            btn_refresh.set_tooltip_text("Recargar descargas")
+            btn_refresh.connect("clicked", lambda b: self.load_downloads())
+            header.pack_end(btn_refresh)
+
+            # Layout horizontal
+            paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+            paned.set_position(330)
+            main_box.pack_start(paned, True, True, 0)
+
+            # Panel Izquierdo
+            left_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            left_box.set_margin_start(10)
+            left_box.set_margin_end(10)
+            left_box.set_margin_top(10)
+            left_box.set_margin_bottom(10)
+
+            self.search_entry = Gtk.SearchEntry()
+            self.search_entry.set_placeholder_text("Filtrar archivos...")
+            self.search_entry.connect("search-changed", self.on_search_changed)
+            left_box.pack_start(self.search_entry, False, False, 0)
+
+            scroll_list = Gtk.ScrolledWindow()
+            scroll_list.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            scroll_list.set_shadow_type(Gtk.ShadowType.IN)
+            self.list_box = Gtk.ListBox()
+            self.list_box.set_selection_mode(Gtk.SelectionMode.SINGLE)
+            self.list_box.connect("row-selected", self.on_row_selected)
+            scroll_list.add(self.list_box)
+            left_box.pack_start(scroll_list, True, True, 0)
+
+            paned.pack1(left_box, False, False)
+
+            # Panel Derecho
+            self.right_stack = Gtk.Stack()
+            self.right_stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+            paned.pack2(self.right_stack, True, False)
+
+            # Vista Vacía
+            empty_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+            empty_box.set_valign(Gtk.Align.CENTER)
+            empty_box.set_halign(Gtk.Align.CENTER)
+            if APP_ICON_PATH and Path(APP_ICON_PATH).exists():
+                icon_empty = Gtk.Image.new_from_file(APP_ICON_PATH)
+            else:
+                icon_empty = Gtk.Image.new_from_icon_name("system-software-install", Gtk.IconSize.DIALOG)
+            empty_box.pack_start(icon_empty, False, False, 0)
+            lbl_empty = Gtk.Label()
+            lbl_empty.set_markup("<span size='large' weight='bold'>Ningún paquete seleccionado</span>\n\nElige un archivo de la lista o pulsa 'Examinar archivo...' para ver qué hace e instalarlo.")
+            lbl_empty.set_justify(Gtk.Justification.CENTER)
+            empty_box.pack_start(lbl_empty, False, False, 0)
+            self.right_stack.add_named(empty_box, "empty")
+
+            # Vista de Detalle
+            detail_scroll = Gtk.ScrolledWindow()
+            detail_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            detail_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+            detail_box.set_margin_start(18)
+            detail_box.set_margin_end(18)
+            detail_box.set_margin_top(14)
+            detail_box.set_margin_bottom(14)
+            detail_scroll.add(detail_box)
+            self.right_stack.add_named(detail_scroll, "detail")
+
+            # Encabezado
+            header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+            self.img_icon = Gtk.Image.new_from_icon_name("package-x-generic", Gtk.IconSize.DIALOG)
+            header_box.pack_start(self.img_icon, False, False, 0)
+
+            title_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            self.lbl_title = Gtk.Label(xalign=0)
+            self.lbl_title.get_style_context().add_class("title-label")
+            self.lbl_subtitle = Gtk.Label(xalign=0)
+            self.lbl_subtitle.get_style_context().add_class("dim-label")
+            title_vbox.pack_start(self.lbl_title, False, False, 0)
+            title_vbox.pack_start(self.lbl_subtitle, False, False, 0)
+            header_box.pack_start(title_vbox, True, True, 0)
+            detail_box.pack_start(header_box, False, False, 0)
+
+            # Tarjeta Resumen
+            card_desc = Gtk.Frame()
+            card_desc.get_style_context().add_class("card-box")
+            desc_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            desc_vbox.set_margin_start(10)
+            desc_vbox.set_margin_end(10)
+            desc_vbox.set_margin_top(8)
+            desc_vbox.set_margin_bottom(8)
+
+            lbl_desc_title = Gtk.Label(xalign=0)
+            lbl_desc_title.set_markup("<b>📋 ¿Qué hace este programa? (Resumen Ejecutivo)</b>")
+            desc_vbox.pack_start(lbl_desc_title, False, False, 0)
+
+            self.lbl_summary = Gtk.Label(xalign=0)
+            self.lbl_summary.set_line_wrap(True)
+            self.lbl_summary.set_max_width_chars(60)
+            self.lbl_summary.get_style_context().add_class("summary-text")
+            desc_vbox.pack_start(self.lbl_summary, False, False, 0)
+            card_desc.add(desc_vbox)
+            detail_box.pack_start(card_desc, False, False, 0)
+
+            # Tarjeta Ficha Técnica
+            card_tech = Gtk.Frame()
+            card_tech.get_style_context().add_class("card-box")
+            tech_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            tech_vbox.set_margin_start(10)
+            tech_vbox.set_margin_end(10)
+            tech_vbox.set_margin_top(8)
+            tech_vbox.set_margin_bottom(8)
+
+            lbl_tech_title = Gtk.Label(xalign=0)
+            lbl_tech_title.set_markup("<b>⚙️ Ficha Técnica y Dependencias</b>")
+            tech_vbox.pack_start(lbl_tech_title, False, False, 0)
+
+            self.grid_tech = Gtk.Grid(column_spacing=12, row_spacing=6)
+            tech_vbox.pack_start(self.grid_tech, False, False, 0)
+            card_tech.add(tech_vbox)
+            detail_box.pack_start(card_tech, False, False, 0)
+
+            # Botones de Acción
+            actions_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+            self.btn_install = Gtk.Button(label="⚡ Instalar Programa")
+            self.btn_install.get_style_context().add_class("suggested-action")
+            self.btn_install.get_style_context().add_class("install-btn")
+            self.btn_install.connect("clicked", self.on_install_clicked)
+            actions_box.pack_start(self.btn_install, False, False, 0)
+
+            btn_open_folder = Gtk.Button(label="📁 Abrir en Carpeta")
+            btn_open_folder.connect("clicked", self.on_open_folder_clicked)
+            actions_box.pack_start(btn_open_folder, False, False, 0)
+            detail_box.pack_start(actions_box, False, False, 4)
+
+            # Barra de Progreso y Registro
+            self.progress_bar = Gtk.ProgressBar()
+            self.progress_bar.set_no_show_all(True)
+            detail_box.pack_start(self.progress_bar, False, False, 0)
+
+            self.log_expander = Gtk.Expander(label="Mostrar registro de instalación")
+            log_scroll = Gtk.ScrolledWindow()
+            log_scroll.set_min_content_height(140)
+            log_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            self.log_view = Gtk.TextView()
+            self.log_view.set_editable(False)
+            self.log_view.set_monospace(True)
+            self.log_buffer = self.log_view.get_buffer()
+            log_scroll.add(self.log_view)
+            self.log_expander.add(log_scroll)
+            detail_box.pack_start(self.log_expander, True, True, 0)
+
+            self.load_downloads(target_file)
+            self.show_all()
+
+        def apply_css(self):
+            css = b"""
+            .card-box {
+                background-color: alpha(@theme_base_color, 0.4);
+                border: 1px solid alpha(@theme_text_color, 0.15);
+                border-radius: 8px;
+            }
+            .title-label {
+                font-size: 20px;
+                font-weight: bold;
+            }
+            .dim-label {
+                opacity: 0.75;
+                font-size: 13px;
+            }
+            .summary-text {
+                font-size: 14px;
+            }
+            .install-btn {
+                font-size: 14px;
+                font-weight: bold;
+                padding: 8px 18px;
+            }
+            """
+            provider = Gtk.CssProvider()
+            provider.load_from_data(css)
+            Gtk.StyleContext.add_provider_for_screen(
+                Gdk.Screen.get_default(),
+                provider,
+                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+
+        def load_downloads(self, select_file: Path | None = None):
+            for child in self.list_box.get_children():
+                self.list_box.remove(child)
+            self.items_list = []
+
+            candidates = []
+            if self.downloads_dir.exists():
+                for ext in ("*.deb", "*.zip", "*.tar.gz", "*.tgz", "*.tar.zst"):
+                    candidates.extend(self.downloads_dir.glob(ext))
+
+            if select_file and select_file.exists() and select_file not in candidates:
+                candidates.insert(0, select_file)
+
+            candidates = sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)
+
+            selected_row = None
+            for p in candidates:
+                meta = parse_metadata(p)
+                self.items_list.append((p, meta))
+
+                row = Gtk.ListBoxRow()
+                row.meta = meta
+
+                hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+                hbox.set_margin_start(8)
+                hbox.set_margin_end(8)
+                hbox.set_margin_top(8)
+                hbox.set_margin_bottom(8)
+
+                icon_name = "application-x-deb" if p.suffix.lower() == ".deb" else "package-x-generic"
+                icon = Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.LARGE_TOOLBAR)
+                hbox.pack_start(icon, False, False, 0)
+
+                vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+                lbl_name = Gtk.Label(xalign=0)
+                lbl_name.set_markup(f"<b>{meta['name']}</b>")
+                lbl_name.set_ellipsize(Pango.EllipsizeMode.END)
+                lbl_name.set_max_width_chars(25)
+
+                lbl_sub = Gtk.Label(xalign=0)
+                lbl_sub.set_markup(f"<span size='small' alpha='70%'>{meta['download_size']} · {p.suffix}</span>")
+                vbox.pack_start(lbl_name, False, False, 0)
+                vbox.pack_start(lbl_sub, False, False, 0)
+                hbox.pack_start(vbox, True, True, 0)
+
+                row.add(hbox)
+                self.list_box.add(row)
+
+                if select_file and p.resolve() == select_file.resolve():
+                    selected_row = row
+
+            self.list_box.show_all()
+
+            if selected_row:
+                self.list_box.select_row(selected_row)
+            elif self.list_box.get_children():
+                self.list_box.select_row(self.list_box.get_children()[0])
+            else:
+                self.right_stack.set_visible_child_name("empty")
+
+        def on_search_changed(self, entry):
+            query = entry.get_text().strip().lower()
+            for row in self.list_box.get_children():
+                name = row.meta["name"].lower()
+                fname = row.meta["path"].name.lower()
+                row.set_visible(query in name or query in fname)
+
+        def on_browse_clicked(self, btn):
+            dialog = Gtk.FileChooserDialog(
+                title="Seleccionar paquete para inspeccionar",
+                parent=self,
+                action=Gtk.FileChooserAction.OPEN
+            )
+            dialog.add_buttons(
+                Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                Gtk.STOCK_OPEN, Gtk.ResponseType.OK
+            )
+            filter_all = Gtk.FileFilter()
+            filter_all.set_name("Instaladores y Comprimidos (*.deb, *.zip, *.tar.*)")
+            filter_all.add_pattern("*.deb")
+            filter_all.add_pattern("*.zip")
+            filter_all.add_pattern("*.tar.*")
+            filter_all.add_pattern("*.tgz")
+            dialog.add_filter(filter_all)
+
+            if dialog.run() == Gtk.ResponseType.OK:
+                chosen = Path(dialog.get_filename())
+                dialog.destroy()
+                self.load_downloads(chosen)
+            else:
+                dialog.destroy()
+
+        def on_row_selected(self, box, row):
+            if not row or not hasattr(row, "meta"):
+                self.right_stack.set_visible_child_name("empty")
+                return
+
+            meta = row.meta
+            self.current_meta = meta
+            self.right_stack.set_visible_child_name("detail")
+
+            icon_name = "application-x-deb" if meta["path"].suffix.lower() == ".deb" else "package-x-generic"
+            self.img_icon.set_from_icon_name(icon_name, Gtk.IconSize.DIALOG)
+            self.lbl_title.set_markup(f"<b>{meta['name']}</b>")
+            self.lbl_subtitle.set_text(f"{meta['type']} · Versión: {meta['version'] or '1.0'} · {meta['arch']}")
+
+            summary_full = f"<b>{meta['short_desc']}</b>"
+            if meta['long_desc'] and meta['long_desc'] != meta['short_desc']:
+                summary_full += f"\n\n{meta['long_desc']}"
+            self.lbl_summary.set_markup(summary_full)
+
+            for child in self.grid_tech.get_children():
+                self.grid_tech.remove(child)
+
+            fields = [
+                ("Archivo:", meta["path"].name),
+                ("Tamaño de descarga:", meta["download_size"]),
+                ("Tamaño estimado:", meta["installed_size"]),
+                ("Desarrollador / Mantenedor:", meta["maintainer"]),
+                ("Sitio web oficial:", meta["homepage"] or "No especificado"),
+                ("Dependencias principales:", meta["depends"][:100] + ("..." if len(meta["depends"]) > 100 else ""))
+            ]
+            for row_idx, (k, v) in enumerate(fields):
+                lbl_k = Gtk.Label(xalign=0)
+                lbl_k.set_markup(f"<span alpha='70%'>{k}</span>")
+                lbl_v = Gtk.Label(xalign=0)
+                lbl_v.set_text(v or "-")
+                lbl_v.set_line_wrap(True)
+                lbl_v.set_max_width_chars(50)
+                self.grid_tech.attach(lbl_k, 0, row_idx, 1, 1)
+                self.grid_tech.attach(lbl_v, 1, row_idx, 1, 1)
+            self.grid_tech.show_all()
+
+            self.btn_install.set_label(meta["action_label"])
+            self.btn_install.set_sensitive(True)
+            self.log_buffer.set_text("")
+            self.progress_bar.hide()
+
+        def on_open_folder_clicked(self, btn):
+            if self.current_meta:
+                subprocess.Popen(["xdg-open", str(self.current_meta["path"].parent)])
+
+        def on_install_clicked(self, btn):
+            if not self.current_meta:
+                return
+
+            meta = self.current_meta
+            file_path = meta["path"]
+
+            self.btn_install.set_sensitive(False)
+            self.progress_bar.show()
+            self.progress_bar.pulse()
+            self.log_expander.set_expanded(True)
+            self.log_buffer.set_text(f"Iniciando procesamiento de {file_path.name}...\n")
+
+            threading.Thread(target=self._worker_install, args=(file_path, meta), daemon=True).start()
+
+        def _worker_install(self, file_path: Path, meta: dict):
+            suffix = file_path.suffix.lower()
+            name_lower = file_path.name.lower()
+
+            env = os.environ.copy()
+            if SUDO_ASKPASS:
+                env["SUDO_ASKPASS"] = SUDO_ASKPASS
+
+            success = False
+
+            if suffix == ".deb":
+                if SUDO_ASKPASS:
+                    cmd = [SUDO_BIN, "-A", "apt-get", "install", "-y", "--fix-broken", str(file_path.resolve())]
+                elif PKEXEC_BIN:
+                    cmd = [PKEXEC_BIN, "apt-get", "install", "-y", "--fix-broken", str(file_path.resolve())]
+                else:
+                    cmd = [SUDO_BIN, "apt-get", "install", "-y", "--fix-broken", str(file_path.resolve())]
+
+                try:
+                    p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    for line in p.stdout:
+                        GLib.idle_add(self._append_log, line)
+                    p.wait()
+                    success = (p.returncode == 0)
+                except Exception as e:
+                    GLib.idle_add(self._append_log, f"\nError: {e}\n")
+            elif suffix == ".zip":
+                dest_dir = file_path.parent / file_path.stem
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                GLib.idle_add(self._append_log, f"Descomprimiendo en {dest_dir}...\n")
+                try:
+                    with zipfile.ZipFile(file_path, "r") as zf:
+                        zf.extractall(dest_dir)
+                    for s in dest_dir.rglob("*.sh"):
+                        s.chmod(s.stat().st_mode | 0o111)
+                    GLib.idle_add(self._append_log, f"✔ Extracción completada exitosamente en:\n{dest_dir}\n")
+                    subprocess.Popen(["xdg-open", str(dest_dir)])
+                    success = True
+                except Exception as e:
+                    GLib.idle_add(self._append_log, f"Error al extraer: {e}\n")
+            elif "ollama" in name_lower:
+                GLib.idle_add(self._append_log, "Desplegando servicio de Ollama...\n")
+                cmd = [SUDO_BIN, "-A", "systemctl", "restart", "ollama"] if SUDO_ASKPASS else [SUDO_BIN, "systemctl", "restart", "ollama"]
+                try:
+                    subprocess.run(cmd, env=env, check=True)
+                    GLib.idle_add(self._append_log, "✔ Servicio de Ollama activo y funcionando.\n")
+                    success = True
+                except Exception as e:
+                    GLib.idle_add(self._append_log, f"Error: {e}\n")
+
+            GLib.idle_add(self._finish_install, success)
+
+        def _append_log(self, text: str):
+            end_iter = self.log_buffer.get_end_iter()
+            self.log_buffer.insert(end_iter, text)
+            self.progress_bar.pulse()
+
+        def _finish_install(self, success: bool):
+            self.progress_bar.hide()
+            self.btn_install.set_sensitive(True)
+            if success:
+                self.btn_install.set_label("✔ Instalado con éxito")
+                dialog = Gtk.MessageDialog(
+                    transient_for=self,
+                    flags=0,
+                    message_type=Gtk.MessageType.INFO,
+                    buttons=Gtk.ButtonsType.OK,
+                    text="¡Instalación completada!"
+                )
+                dialog.format_secondary_text(f"El procesamiento de '{self.current_meta['name']}' finalizó correctamente.")
+                dialog.run()
+                dialog.destroy()
+            else:
+                dialog = Gtk.MessageDialog(
+                    transient_for=self,
+                    flags=0,
+                    message_type=Gtk.MessageType.ERROR,
+                    buttons=Gtk.ButtonsType.OK,
+                    text="Error durante la instalación"
+                )
+                dialog.format_secondary_text("Revisa los detalles en el registro desplegable inferior.")
+                dialog.run()
+                dialog.destroy()
+
+    app = InbeeboxInstallerApp(initial_file)
+    app.connect("destroy", Gtk.main_quit)
+    Gtk.main()
+
+# ============================================================================
+# MODO LÍNEA DE COMANDOS (CLI FALLBACK)
+# ============================================================================
+
+def run_cli_mode(files: list[Path]):
+    print("=" * 65)
+    print("  INBEEBOX AUTO-INSTALLER (Modo Terminal)")
+    print("  Hecho por iArtLabs & Antigravity (Google DeepMind)")
+    print("=" * 65)
+    for f in files:
+        if not f.exists():
+            print(f"[-] Archivo no encontrado: {f}")
+            continue
+        meta = parse_metadata(f)
+        print(f"\n📦 Programa: {meta['name']} (v{meta['version'] or '1.0'})")
+        print(f"📌 Tipo: {meta['type']} | Tamaño: {meta['download_size']}")
+        print(f"📋 Resumen: {meta['short_desc']}")
+        if meta.get("long_desc") and meta["long_desc"] != meta["short_desc"]:
+            print(f"   {meta['long_desc'][:160]}...")
+        print(f"🔧 Desarrollador: {meta['maintainer']}")
+
+        try:
+            ans = input(f"\n¿Deseas proceder con '{meta['action_label']}'? [S/n]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\nOperación cancelada.")
+            break
+
+        if ans in ("", "s", "si", "y", "yes"):
+            if f.suffix.lower() == ".deb":
+                env = os.environ.copy()
+                if SUDO_ASKPASS:
+                    env["SUDO_ASKPASS"] = SUDO_ASKPASS
+                    cmd = [SUDO_BIN, "-A", "apt-get", "install", "-y", "--fix-broken", str(f.resolve())]
+                else:
+                    cmd = [SUDO_BIN, "apt-get", "install", "-y", "--fix-broken", str(f.resolve())]
+                subprocess.run(cmd, env=env)
+            elif f.suffix.lower() == ".zip":
+                dest = f.parent / f.stem
+                with zipfile.ZipFile(f) as zf:
+                    zf.extractall(dest)
+                print(f"[+] Extraído en: {dest}")
+
+# ============================================================================
+# PUNTO DE ENTRADA PRINCIPAL
+# ============================================================================
+
+def main():
+    force_cli = ("--cli" in sys.argv or "-c" in sys.argv)
+    args = [a for a in sys.argv[1:] if a not in ("--cli", "-c")]
+
+    nautilus_paths = os.environ.get("NAUTILUS_SCRIPT_SELECTED_FILE_PATHS", "").strip()
+    target_file = None
+
+    if args:
+        target_file = Path(args[0])
+    elif nautilus_paths:
+        target_file = Path(nautilus_paths.splitlines()[0].strip())
+
+    has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    if not force_cli and has_display:
+        try:
+            import gi
+            gi.require_version("Gtk", "3.0")
+            from gi.repository import Gtk
+            ok, _ = Gtk.init_check(None)
+            if ok:
+                launch_gui(target_file)
+                return
+        except Exception:
+            pass
+
+    # Fallback CLI
+    downloads_dir = Path.home() / "Descargas"
+    if not downloads_dir.exists():
+        downloads_dir = Path.home() / "Downloads"
+
+    files = [target_file] if target_file else list(downloads_dir.glob("*.deb"))[:10]
+    run_cli_mode(files)
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nCancelado.")
+    except Exception as e:
+        print(f"\nError: {e}")
